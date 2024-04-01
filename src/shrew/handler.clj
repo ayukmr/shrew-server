@@ -1,4 +1,4 @@
-(ns shrew-server.handler
+(ns shrew.handler
   (:require
    [compojure.core :refer [defroutes routes wrap-routes GET POST]]
    [compojure.route :as route]
@@ -6,7 +6,7 @@
    [ring.middleware.json :refer [wrap-json-body wrap-json-response]]
    [ring.middleware.cors :refer [wrap-cors]]
    [ring.util.response :refer [response status]]
-   [shrew-server.database :as db]))
+   [shrew.database :as db]))
 
 (defn wrap-auth [handler auth-type]
   (fn [{{team :team} :params

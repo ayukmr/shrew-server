@@ -1,4 +1,4 @@
-(defproject shrew-server "0.1.0"
+(defproject shrew "0.1.0"
   :dependencies [[org.clojure/clojure "1.11.1"]
                  [compojure "1.7.1"]
                  [ring/ring-defaults "0.4.0"]
@@ -10,4 +10,4 @@
 
   :plugins [[lein-ring "0.12.6"]]
 
-  :ring {:handler shrew-server.handler/app})
+  :ring {:handler shrew.handler/app})

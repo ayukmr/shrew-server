@@ -1,4 +1,4 @@
-(ns shrew-server.database
+(ns shrew.database
   (:require
     [honey.sql :as sql]
     [honey.sql.helpers :as h]
