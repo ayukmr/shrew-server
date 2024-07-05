@@ -26,18 +26,25 @@
           (-> (db/get-responses team)
               (response)))
 
-        (POST "/settings/:team" [team :as {{event     :event
-                                            points    :points
-                                            questions :questions} :body}]
-          (db/set-settings! team {:event     event
-                                  :points    (into-array points)
-                                  :questions (into-array questions)})
+        (POST "/settings/:team" [team :as {{event  :event
+                                            points :points} :body}]
+          (db/set-settings! team {:event  event
+                                  :points (into-array points)})
+          (status nil 200))
+
+        (POST "/questions/:type/:team" [type team
+                                        :as {{questions :questions} :body}]
+          (db/set-questions! team type (into-array questions))
           (status nil 200)))
       (wrap-routes wrap-auth :admin))
 
   (-> (routes
         (GET "/settings/:team" [team]
           (-> (db/get-settings team)
+              (response)))
+
+        (GET "/questions/:team" [team]
+          (-> (db/get-questions team)
               (response)))
 
         (POST "/points/:team" [team
@@ -48,19 +55,14 @@
                (db/add-points! team match scouting))
           (status nil 200))
 
-        (POST "/responses/:team" [team
-                                  :as {{match     :match
-                                        scouting  :scouting
-                                        responses :responses} :body}]
+        (POST "/responses/:type/:team" [type team
+                                        :as {{match     :match
+                                              scouting  :scouting
+                                              responses :responses} :body}]
           (->> (map #(select-keys % [:question :response]) responses)
-               (db/add-responses! team match scouting))
+               (db/add-responses! team match scouting type))
           (status nil 200)))
       (wrap-routes wrap-auth :scout))
-
-  (GET "/auth/:type/:team" [type team
-                            :as {{auth "authorization"} :headers}]
-    (-> {:valid (db/auth? team (keyword type) auth)}
-        (response)))
 
   (route/not-found "Not found"))
 

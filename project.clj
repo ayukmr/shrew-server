@@ -10,4 +10,6 @@
 
   :plugins [[lein-ring "0.12.6"]]
 
+  :resource-paths ["src/shrew/resources"]
+
   :ring {:handler shrew.handler/app})

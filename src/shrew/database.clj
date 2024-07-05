@@ -1,5 +1,6 @@
 (ns shrew.database
   (:require
+    [clojure.java.io :as io]
     [honey.sql :as sql]
     [honey.sql.helpers :as h]
     [next.jdbc :as jdbc]
@@ -17,43 +18,12 @@
             (jdbc/with-options {:builder-fn as-unqualified-lower-maps})))
 
 (defn create-tables! []
-  (jdbc/execute! ds ["
-  CREATE TABLE points (
-    id      INTEGER AUTO_INCREMENT PRIMARY KEY,
-    scout   VARCHAR(255),
-    event   VARCHAR(255),
-    match   INTEGER,
-    team    INTEGER,
-    move    REAL,
-    intake  REAL,
-    outtake REAL,
-    point   VARCHAR(255)
-  );
+  (jdbc/execute! ds [(-> "up.sql"
+                         io/resource
+                         io/file
+                         slurp)]))
 
-  CREATE TABLE responses (
-    id       INTEGER AUTO_INCREMENT PRIMARY KEY,
-    scout    VARCHAR(255),
-    event    VARCHAR(255),
-    match    INTEGER,
-    team     INTEGER,
-    question VARCHAR(255),
-    response VARCHAR(255)
-  );
-
-  CREATE TABLE auth (
-    team  INTEGER PRIMARY KEY,
-    scout VARCHAR(255),
-    admin VARCHAR(255)
-  );
-
-  CREATE TABLE settings (
-    team      INTEGER PRIMARY KEY,
-    event     VARCHAR(255),
-    points    VARCHAR(255) ARRAY,
-    questions VARCHAR(255) ARRAY
-  );"]))
-
-(defn auth? [team type pass]
+(defn check-pass? [team type pass]
   (->> (-> (h/select [type])
            (h/from   :auth)
            (h/where  [:= :team team])
@@ -61,6 +31,13 @@
        (jdbc/execute-one! ds)
        (type)
        (= pass)))
+
+(defn auth? [team type pass]
+  (when (contains? #{:scout :admin} type)
+    (if (= type :scout)
+      (or (check-pass? team :scout pass)
+          (check-pass? team :admin pass))
+      (check-pass? team :admin pass))))
 
 (defn create-team! [team scout-pass admin-pass]
   (->> (-> (h/insert-into :auth)
@@ -70,15 +47,26 @@
            (sql/format))
        (jdbc/execute! ds))
   (->> (-> (h/insert-into :settings)
-           (h/values [{:team      team
-                       :event     nil
-                       :points    (into-array ["Speaker" "Amp"])
+           (h/values [{:team   team
+                       :event  "Sample Event"
+                       :points (into-array ["Speaker" "Amp"])}])
+           (sql/format))
+       (jdbc/execute! ds))
+  (->> (-> (h/insert-into :questions)
+           (h/values [{:team team
+                       :type "pre"
+                       :questions (into-array ["What did they do?"])}])
+           (sql/format))
+       (jdbc/execute! ds))
+  (->> (-> (h/insert-into :questions)
+           (h/values [{:team team
+                       :type "post"
                        :questions (into-array ["How was the team's driver?"])}])
            (sql/format))
        (jdbc/execute! ds)))
 
 (defn get-settings [team]
-  (->> (-> (h/select :event :points :questions)
+  (->> (-> (h/select :event :points)
            (h/from   :settings)
            (h/where  [:= :team team])
            (sql/format))
@@ -88,13 +76,14 @@
   (-> (get-settings team)
       (get key)))
 
-(defn set-setting! [team key value]
-  (when (contains? #{:event :points :questions} key)
-    (->> (-> (h/update :settings)
-             (h/set    {key value})
-             (h/where  [:= :team team])
-             (sql/format))
-         (jdbc/execute! ds))))
+(defn get-questions [team]
+  (->> (-> (h/select :type :questions)
+           (h/from :questions)
+           (h/where [:= :team team])
+           (sql/format))
+       (jdbc/execute! ds)
+       (map #(identity [(get % :type) (get % :questions)]))
+       (into {})))
 
 (defn set-settings! [team settings]
   (->> (-> (h/update :settings)
@@ -102,6 +91,14 @@
            (h/where  [:= :team team])
            (sql/format))
        (jdbc/execute! ds)))
+
+(defn set-questions! [team type questions]
+  (when (contains? #{"pre" "post"} type)
+    (->> (-> (h/update :questions)
+             (h/set {:questions questions})
+             (h/where [:= :team team] [:= :type type])
+             (sql/format))
+         (jdbc/execute! ds))))
 
 (defn get-points [team]
   (->> (-> (h/select [:*])
@@ -115,7 +112,8 @@
            (h/from   :responses)
            (h/where  [:= :scout team])
            (sql/format))
-       (jdbc/execute! ds)))
+       (jdbc/execute! ds)
+       (group-by :type)))
 
 (defn add-metadata [scout match team data]
   (map #(merge % {:scout scout
@@ -129,8 +127,11 @@
            (sql/format))
        (jdbc/execute! ds)))
 
-(defn add-responses! [scout match team responses]
-  (->> (-> (h/insert-into :responses)
-           (h/values (add-metadata scout match team responses))
-           (sql/format))
-       (jdbc/execute! ds)))
+(defn add-responses! [scout match team type responses]
+  (when (contains? #{"pre" "post"} type)
+    (->> (-> (h/insert-into :responses)
+             (h/values (->> responses
+                            (add-metadata scout match team)
+                            (map #(merge % {:type type}))))
+             (sql/format))
+         (jdbc/execute! ds))))
